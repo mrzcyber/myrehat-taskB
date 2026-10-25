@@ -15,6 +15,10 @@ Rules:
 - Keep it short: at most 3 sentences, plain text, no markdown.
 - Never invent prices, availability or listings; point the guest to the listings page or the host's WhatsApp instead.`;
 
+// Free models are often reasoning models: without this they can spend the whole
+// token budget thinking and return empty text.
+export const CONCIERGE_PROVIDER_OPTIONS = { openrouter: { reasoning: { enabled: false } } };
+
 // WAHA sends many more fields (session, id, fromMe, ...); we only need these and ignore the rest.
 export const wahaWebhookSchema = z
   .object({
@@ -73,10 +77,9 @@ export async function buildConciergeReply({
       model,
       system: CONCIERGE_SYSTEM_PROMPT,
       prompt: body,
-      // Free models are often reasoning models: without this they can spend the whole
-      // token budget thinking and return empty text. Headroom covers models that ignore it.
+      // Headroom for models that ignore the reasoning switch.
       maxOutputTokens: 600,
-      providerOptions: { openrouter: { reasoning: { enabled: false } } },
+      providerOptions: CONCIERGE_PROVIDER_OPTIONS,
       abortSignal: AbortSignal.timeout(timeoutMs),
     });
     const reply = text.trim();

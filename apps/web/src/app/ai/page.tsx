@@ -35,13 +35,11 @@ import { ArrowUpIcon, Loader2, MessageCircleDashedIcon, RotateCwIcon } from "luc
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { Streamdown } from "streamdown";
 
-import { ENV } from "../../env";
-
 export default function AIPage() {
   const [input, setInput] = useState("");
   const { messages, sendMessage, status, setMessages } = useChat({
     transport: new DefaultChatTransport({
-      api: `${ENV.NEXT_PUBLIC_SERVER_URL}/ai`,
+      api: "/api/chat",
     }),
   });
   const isSending = status === "submitted" || status === "streaming";

@@ -59,3 +59,4 @@ next-env.d.ts
 
 # Dummy build-time env (real values injected by Dokploy)
 !.env
+.devtools
