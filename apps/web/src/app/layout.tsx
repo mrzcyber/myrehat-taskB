@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "myrehat-task-b",
-  description: "myrehat-task-b",
+  title: "MyRehat — Book homestays directly with hosts",
+  description: "Book homestays directly with hosts, and buy or sell homestay businesses.",
 };
 
 export default function RootLayout({
