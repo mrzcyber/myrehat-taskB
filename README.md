@@ -1,138 +1,136 @@
-# myrehat-task-b
+# MyRehat — Task B
 
-This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines Next.js, Elysia, ORPC, and more.
+Book homestays directly with hosts, plus **BuyHomestay**: a marketplace for properties, land, Airbnb profiles and Airbnb businesses.
 
-## Features
+Monorepo scaffolded with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack): Next.js (web) · Elysia on Bun (server) · oRPC · Better-Auth · Drizzle + PostgreSQL · AI SDK v7 · Turborepo · Biome.
 
-- **TypeScript** - For type safety and improved developer experience
-- **Next.js** - Full-stack React framework
-- **TailwindCSS** - Utility-first CSS for rapid UI development
-- **Shared UI package** - shadcn/ui primitives live in `packages/ui`
-- **Elysia** - Type-safe, high-performance framework
-- **oRPC** - End-to-end type-safe APIs with OpenAPI integration
-- **Bun** - Runtime environment
-- **Drizzle** - TypeScript-first ORM
-- **PostgreSQL** - Database engine
-- **Authentication** - Better-Auth
-- **Turborepo** - Optimized monorepo build system
-- **Biome** - Linting and formatting
+| Feature | Where |
+| --- | --- |
+| **F1** BuyHomestay listings — form (title, price, location, 4 categories, WhatsApp), login required to submit, public list | `/listings`, `/listings/new`, `packages/api/src/routers/listing.ts` |
+| **F2** WAHA concierge webhook — `POST /api/webhooks/waha` → validate → `generateText` → `{ to, reply }` | `apps/web/src/app/api/webhooks/waha/route.ts`, `apps/web/src/lib/waha.ts` |
+| **F3** Polish listing descriptions with `ai-sdk-provider-opencode-sdk` | `scripts/polish.ts` |
+| **F4** Hero "Book homestays directly with hosts", mobile-first | `apps/web/src/app/page.tsx` |
 
-## Getting Started
+## Project structure
 
-First, install the dependencies:
+```
+apps/
+  web/        Next.js app (UI, F2 webhook, /api/chat) — port 3001
+  server/     Elysia API (oRPC at /rpc, Better-Auth at /api/auth) — port 3000
+packages/
+  api/        oRPC routers + shared Zod schemas (listing validation)
+  auth/       Better-Auth config
+  db/         Drizzle schema (auth tables, listing table + category enum)
+  ui/         shared shadcn/ui components
+scripts/
+  polish.ts   F3 CLI
+```
+
+The browser only talks to the **web** origin: `next.config.ts` rewrites `/rpc/*` and `/api/auth/*` to the server container, so auth cookies stay first-party.
+
+## Getting started
+
+Requirements: Node ≥ 22, pnpm 11, Bun ≥ 1.2, a PostgreSQL database.
 
 ```bash
 pnpm install
 ```
 
-## Database Setup
+The committed `apps/web/.env` and `apps/server/.env` contain **build-time placeholders only**. Put real values in git-ignored `.env.local` files:
 
-This project uses PostgreSQL with Drizzle ORM.
+`apps/server/.env.local`
+```env
+NODE_ENV=development
+DATABASE_URL=postgresql://user:password@host:5432/db
+BETTER_AUTH_SECRET=<random string, 32+ chars>
+BETTER_AUTH_URL=http://localhost:3001
+CORS_ORIGIN=http://localhost:3001
+GOOGLE_GENERATIVE_AI_API_KEY=placeholder
+```
 
-1. Make sure you have a PostgreSQL database set up.
-2. Update your `apps/server/.env` file with your PostgreSQL connection details.
+`apps/web/.env.local`
+```env
+NODE_ENV=development
+NEXT_PUBLIC_SERVER_URL=http://localhost:3001
+OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free
+# optional: require an X-Api-Key header on the webhook
+# WAHA_WEBHOOK_SECRET=
+```
 
-3. Apply the schema to your database:
+Create the tables, then start both apps:
 
 ```bash
-pnpm run db:push
+cd packages/db && pnpm exec drizzle-kit push   # `pnpm db:push` needs an interactive terminal
+cd ../.. && pnpm dev
 ```
 
-Then, run the development server:
+Web: http://localhost:3001 · API: http://localhost:3000
+
+## Tests and type checks
 
 ```bash
-pnpm run dev
+bunx vitest run       # or: pnpm test
+pnpm check-types      # every workspace package + root tsc (scripts and tests)
 ```
 
-Open [http://localhost:3001](http://localhost:3001) in your browser to see the web application.
-The API is running at [http://localhost:3000](http://localhost:3000).
+All AI calls in the tests use `MockLanguageModelV4` from `ai/test`, so the tests need no network, API key, database or OpenCode server.
 
-## UI Customization
+| File | Covers |
+| --- | --- |
+| `apps/web/src/lib/waha.test.ts` | Webhook validation (valid, extra WAHA fields, missing/empty/too-long fields, wrong event), reply format exactly `{ to, reply }`, fallback when the model fails or returns nothing, route 400/401 responses |
+| `packages/api/src/schemas/listing.test.ts` | All 4 categories accepted, `"Rent Villa"` rejected, exact-match only, DB enum in sync with the form, WhatsApp normalisation, price and field validation |
+| `scripts/polish.test.ts` | Polished output cleanup, prompt contents, original kept on empty output, empty input rejected, errors propagated, OpenCode wiring (base URL, Basic auth, model id) |
 
-React web apps in this stack share shadcn/ui primitives through `packages/ui`.
-
-- Change design tokens and global styles in `packages/ui/src/styles/globals.css`
-- Update shared primitives in `packages/ui/src/components/*`
-- Adjust shadcn aliases or style config in `packages/ui/components.json` and `apps/web/components.json`
-
-### Add more shared components
-
-Run this from the project root to add more primitives to the shared UI package:
+## F2 — WAHA webhook
 
 ```bash
-npx shadcn@latest add accordion dialog popover sheet table -c packages/ui
+curl -X POST http://localhost:3001/api/webhooks/waha \
+  -H 'Content-Type: application/json' \
+  -d '{"event":"message","session":"default","payload":{"from":"6281234567890@c.us","body":"Halo, ada homestay di Ubud untuk 2 orang?"}}'
 ```
 
-Import shared components like this:
-
-```tsx
-import { Button } from "@myrehat-task-b/ui/components/button";
+```json
+{ "to": "6281234567890@c.us", "reply": "Halo! ..." }
 ```
 
-### Add app-specific blocks
+| Request | Response |
+| --- | --- |
+| Valid `message` event | `200 { to, reply }` — `to` is the sender, `reply` from the AI |
+| AI error / rate limit / no API key | `200 { to, reply }` with a friendly fallback reply (contract kept) |
+| Invalid JSON | `400 { error: "Invalid JSON" }` |
+| Missing `from` / `body`, empty body, body > 4000 chars, event ≠ `message` | `400 { error, issues: [{ path, message }] }` |
+| `WAHA_WEBHOOK_SECRET` set and `X-Api-Key` missing/wrong | `401` |
 
-If you want to add app-specific blocks instead of shared primitives, run the shadcn CLI from `apps/web`.
+Free OpenRouter models are often reasoning models; reasoning is disabled (`providerOptions.openrouter.reasoning.enabled = false`) so the token budget isn't spent on thinking and the reply is never empty. The same concierge powers the web chat at `/ai` (`/api/chat`).
 
-## Environment Configuration
+## F3 — polish listing descriptions
 
-Each app owns its environment schema in `.env.schema`. Varlock generates `src/env.ts` during installation; run `pnpm run env:generate` after changing a schema. Commit schemas, and keep secrets in ignored env files or your deployment platform.
+Runs against an [OpenCode](https://opencode.ai) 2.x server through `ai-sdk-provider-opencode-sdk`:
 
-Import the generated `ENV` accessor in application code. Shared database and auth packages receive configuration or initialized clients from the application. See [Varlock's monorepo guide](https://varlock.dev/guides/monorepos/).
+```bash
+OPENCODE_PASSWORD=secret npx @opencode/cli@2.0.24 serve --port 4096   # separate terminal
 
-Bun's automatic env loading is disabled in `bunfig.toml`; the framework integration or server bootstrap loads Varlock. Node deployments must include Varlock and its dependencies alongside the app schema.
-
-Run standalone Node/Bun tools that use Varlock from the owning app directory so they load that app's schema and env files. `env:generate` only generates TypeScript files; it does not initialize environment values in a subsequent command.
-
-## Deployment
-
-### Docker Compose
-
-- Target: web + server
-- Config: `docker-compose.yml` (app Dockerfiles live in `apps/*/Dockerfile`)
-- Build images: pnpm run docker:build
-- Start: pnpm run docker:up
-- Logs: pnpm run docker:logs
-- Stop: pnpm run docker:down
-
-Environment variables are read from each app's `.env` file (baked into web builds for public variables) and overridden in `docker-compose.yml` for container networking.
-
-For more details, see the guide on [Deploying with Docker Compose](https://www.better-t-stack.dev/docs/guides/docker).
-
-## Git Hooks and Formatting
-
-- Run checks: `pnpm run check`
-
-## Project Structure
-
-```
-myrehat-task-b/
-├── apps/
-│   ├── web/         # Frontend application (Next.js)
-│   └── server/      # Backend API (Elysia, ORPC)
-├── packages/
-│   ├── ui/          # Shared shadcn/ui components and styles
-│   ├── api/         # API layer / business logic
-│   ├── auth/        # Authentication configuration & logic
-│   └── db/          # Database schema & queries
+OPENCODE_PASSWORD=secret pnpm polish "villa 3 kamar dkt pantai canggu ada kolam" \
+  --title "Villa Canggu" --category "Buy Property" --location "Canggu, Bali"
+echo "raw description" | pnpm polish
 ```
 
-## Available Scripts
+Env: `OPENCODE_BASE_URL` (default `http://127.0.0.1:4096`), `OPENCODE_PASSWORD`, `OPENCODE_MODEL` (default `opencode/nemotron-3.5-lightning-free`). The script keeps every fact, adds none, and falls back to the original text if the model returns nothing. Without a server it exits with code 1 and a readable error.
 
-- `pnpm run dev`: Start all applications in development mode
-- `pnpm run build`: Build all applications
-- `pnpm run dev:web`: Start only the web application
-- `pnpm run dev:server`: Start only the server
-- `pnpm run check-types`: Check TypeScript types across all apps
-- `pnpm run db:push`: Push schema changes to database
-- `pnpm run db:generate`: Generate database client/types
-- `pnpm run db:migrate`: Run database migrations
-- `pnpm run db:studio`: Open database studio UI
-- `pnpm run check`: Run Biome formatting and linting
-- `pnpm run docker:build`: Build the Docker Compose images
-- `pnpm run docker:up`: Build and start the Docker Compose stack
-- `pnpm run docker:logs`: Tail logs from the Docker Compose stack
-- `pnpm run docker:down`: Stop the Docker Compose stack
+## Deployment (Docker / Dokploy)
 
-## Better Auth Schema Generation
+`docker-compose.yml` runs `web` and `server`. Real values are injected by the platform; the committed `.env` files only make the build succeed. Required environment:
 
-After changing auth plugins or schema options, run `pnpm run auth:generate` from the project root. The script runs the Better Auth CLI through `varlock run` from the owning app directory, loading the auth instance from `src/services.ts`. Review the schema changes, then use your ORM's migration workflow to apply them.
+| Variable | Service | Value |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SERVER_URL` | web (build + runtime) | Public URL of the web app |
+| `BETTER_AUTH_URL` | server | Same public URL |
+| `DATABASE_URL` | server | PostgreSQL connection string |
+| `BETTER_AUTH_SECRET` | server | Random string, 32+ chars |
+| `OPENROUTER_API_KEY` | web | OpenRouter key |
+| `OPENROUTER_MODEL` | web | Any `:free` model, e.g. `nvidia/nemotron-3.5-lightning:free` |
+
+Point the public domain at service `web`, port `3001`. Cookies use `sameSite: "lax", secure: false`, so the app works over plain http.
+
+The prompts used to build this project are in [`PROMPT_LOG.md`](PROMPT_LOG.md).
